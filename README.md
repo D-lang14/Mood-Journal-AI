@@ -26,7 +26,9 @@ streamlit run main.py
 - 💾 CSV Log: All journal entries are saved in mood_history.csv.
 
 ## 📸 Screenshot
-*(Add one later once deployed)*
+![Screenshot 2025-06-07 184920](https://github.com/user-attachments/assets/bcbffa1e-4cf5-4eaa-80f6-5914cc75b82b)
+![Screenshot 2025-06-07 184936](https://github.com/user-attachments/assets/023a3739-dcb5-489a-9d2e-4a862bab6c88)
+![Screenshot 2025-06-07 191425](https://github.com/user-attachments/assets/d4eafff1-d1be-4ebd-b99e-c122e107dcc8)
 
 ## 🧪 Model Used
 - Model: j-hartmann/emotion-english-distilroberta-base
