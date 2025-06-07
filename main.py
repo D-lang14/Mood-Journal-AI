@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 import matplotlib.pyplot as plt
 
-# Load model only once
+# Load model
 @st.cache_resource(show_spinner=False)
 def load_emotion_model():
     return pipeline("text-classification", model="j-hartmann/emotion-english-distilroberta-base", return_all_scores=True)
@@ -71,19 +71,17 @@ st.write("Write how you feel today. I'll analyze your mood, give journaling tips
 
 user_input = st.text_area("Your mood journal entry:", height=150)
 
-# Setup session state for controlled rerun behavior
+# Session state to prevent auto rerun errors
 if "submitted" not in st.session_state:
     st.session_state.submitted = False
     st.session_state.result = None
 
-# Save + analyze
 if st.button("Analyze My Mood") and user_input.strip():
     emotion, confidence = analyze_emotion(user_input)
     save_entry(user_input, emotion, confidence)
     st.session_state.submitted = True
     st.session_state.result = (emotion, confidence, user_input)
 
-# Show result only after submission
 if st.session_state.submitted and st.session_state.result:
     emotion, confidence, _ = st.session_state.result
     st.subheader(f"Detected Emotion: {emotion} ({confidence:.0%} confidence)")
@@ -93,25 +91,42 @@ if st.session_state.submitted and st.session_state.result:
     st.info(get_motivational_message(emotion))
     st.success("✅ Entry saved!")
 
-# Mood history section
+# Mood history
 st.markdown("---")
 st.subheader("📈 Mood History")
 
 entries = load_entries()
 
 if not entries.empty:
-    st.dataframe(entries.tail(5).reset_index(drop=True))
+    st.dataframe(entries.reset_index(drop=True))
 
-    # Chart: Mood count (x = mood, y = #entries)
+    # Convert date
+    entries['date_only'] = pd.to_datetime(entries['date']).dt.date
+
+    # 📊 Mood counts
     mood_counts = entries['emotion'].value_counts().sort_index()
+    total_entries = mood_counts.sum()
+    mood_percentages = (mood_counts / total_entries * 100).sort_values()
 
-    # Plot with dark theme
+    # 🎯 Most common mood (mode)
+    mood_mode = entries['emotion'].mode().iloc[0]
+
+    # 🖤 Dark Theme Chart
     plt.style.use("dark_background")
-    fig, ax = plt.subplots(figsize=(10, 4))
-    mood_counts.plot(kind='line', marker='o', color='cyan', ax=ax)
-    ax.set_title("Total Entries per Mood")
+    fig, ax = plt.subplots(figsize=(10, 5))
+    mood_percentages.plot(kind='line', marker='o', color='lime', ax=ax)
+
+    ax.set_title("Mood Percentage Distribution")
     ax.set_xlabel("Mood")
-    ax.set_ylabel("Number of Entries")
+    ax.set_ylabel("Percentage (%)")
+    for i, (label, value) in enumerate(mood_percentages.items()):
+        ax.text(i, value + 1, f"{value:.1f}%", color='white', ha='center')
+
     st.pyplot(fig)
+
+    # ➕ Show mode below chart
+    st.markdown(f"### 🏆 Most Frequent Mood: **{mood_mode.upper()}**")
+    st.caption("Based on percentage of all journal entries.")
+
 else:
-    st.info("No entries yet. Once you add, they will appear here with a line chart.")
+    st.info("No entries yet. Once you add, they will appear here with a mood percentage chart.")
