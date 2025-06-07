@@ -1,24 +1,22 @@
 import streamlit as st
 from transformers import pipeline
 import pandas as pd
-import matplotlib.pyplot as plt
-from datetime import datetime
 import os
+from datetime import datetime
+import matplotlib.pyplot as plt
 
-# Cache model loading
+# Load model only once
 @st.cache_resource(show_spinner=False)
 def load_emotion_model():
     return pipeline("text-classification", model="j-hartmann/emotion-english-distilroberta-base", return_all_scores=True)
 
 emotion_classifier = load_emotion_model()
 
-# Analyze input text and get emotion
 def analyze_emotion(text):
     results = emotion_classifier(text)[0]
     top_emotion = max(results, key=lambda x: x['score'])
     return top_emotion['label'], top_emotion['score']
 
-# Tip based on emotion
 def get_journaling_tip(emotion):
     tips = {
         "joy": "Keep embracing positive moments and express gratitude in your journal today!",
@@ -31,7 +29,6 @@ def get_journaling_tip(emotion):
     }
     return tips.get(emotion.lower(), "Write honestly about how you feel today.")
 
-# Motivation based on emotion
 def get_motivational_message(emotion):
     messages = {
         "joy": "Your happiness is your strength—keep shining!",
@@ -44,67 +41,77 @@ def get_motivational_message(emotion):
     }
     return messages.get(emotion.lower(), "Keep being you. Every feeling is valid.")
 
-# Save entry to CSV
+DATA_FILE = "mood_journal_entries.csv"
+
 def save_entry(text, emotion, confidence):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    entry = {"timestamp": timestamp, "text": text, "emotion": emotion, "confidence": confidence}
-    file_path = "mood_history.csv"
-    
-    if os.path.exists(file_path):
-        df = pd.read_csv(file_path)
+    entry = {
+        "date": datetime.now().isoformat(),
+        "text": text,
+        "emotion": emotion,
+        "confidence": confidence
+    }
+    if os.path.exists(DATA_FILE):
+        df = pd.read_csv(DATA_FILE)
         df = pd.concat([df, pd.DataFrame([entry])], ignore_index=True)
     else:
         df = pd.DataFrame([entry])
-    
-    df.to_csv(file_path, index=False)
+    df.to_csv(DATA_FILE, index=False)
 
-# Plot line chart of mood entries
-def show_history_chart():
-    file_path = "mood_history.csv"
-    if os.path.exists(file_path):
-        df = pd.read_csv(file_path)
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
-        df['count'] = 1
-
-        fig, ax = plt.subplots(figsize=(10, 4))
-        mood_counts = df.groupby([df['timestamp'].dt.date, 'emotion']).size().unstack().fillna(0)
-        mood_counts.plot(ax=ax, kind='line', marker='o')
-
-        plt.title("📈 Mood Trend Over Time")
-        plt.xlabel("Date")
-        plt.ylabel("Number of Entries")
-        plt.xticks(rotation=45)
-        st.pyplot(fig)
+def load_entries():
+    if os.path.exists(DATA_FILE):
+        return pd.read_csv(DATA_FILE)
     else:
-        st.info("No mood history available yet. Start journaling!")
+        return pd.DataFrame(columns=["date", "text", "emotion", "confidence"])
 
-# -------- Streamlit UI --------
-
-st.set_page_config(page_title="AI Mood Journal", layout="centered")
+# App UI
+st.set_page_config(page_title="Mood Journal AI", layout="centered")
 st.title("📝 Daily Mood Journal with AI Therapist")
-
-# Session state for rerun control
-if "new_entry_added" not in st.session_state:
-    st.session_state["new_entry_added"] = False
 
 st.write("Write how you feel today. I'll analyze your mood, give journaling tips, and motivational feedback!")
 
 user_input = st.text_area("Your mood journal entry:", height=150)
 
+# Setup session state for controlled rerun behavior
+if "submitted" not in st.session_state:
+    st.session_state.submitted = False
+    st.session_state.result = None
+
+# Save + analyze
 if st.button("Analyze My Mood") and user_input.strip():
-    with st.spinner("Analyzing your mood..."):
-        emotion, confidence = analyze_emotion(user_input)
-        st.subheader(f"Detected emotion: {emotion} ({confidence:.0%} confidence)")
-        st.markdown("### Journaling Tip:")
-        st.write(get_journaling_tip(emotion))
-        st.markdown("### Motivational Message:")
-        st.info(get_motivational_message(emotion))
+    emotion, confidence = analyze_emotion(user_input)
+    save_entry(user_input, emotion, confidence)
+    st.session_state.submitted = True
+    st.session_state.result = (emotion, confidence, user_input)
 
-        save_entry(user_input, emotion, confidence)
-        st.success("✅ Entry saved! See mood trend below ⬇️")
+# Show result only after submission
+if st.session_state.submitted and st.session_state.result:
+    emotion, confidence, _ = st.session_state.result
+    st.subheader(f"Detected Emotion: {emotion} ({confidence:.0%} confidence)")
+    st.markdown("### Journaling Tip:")
+    st.write(get_journaling_tip(emotion))
+    st.markdown("### Motivational Message:")
+    st.info(get_motivational_message(emotion))
+    st.success("✅ Entry saved!")
 
-        st.session_state["new_entry_added"] = True
-
+# Mood history section
 st.markdown("---")
-st.header("📊 Your Mood History")
-show_history_chart()
+st.subheader("📈 Mood History")
+
+entries = load_entries()
+
+if not entries.empty:
+    st.dataframe(entries.tail(5).reset_index(drop=True))
+
+    # Chart: Mood count (x = mood, y = #entries)
+    mood_counts = entries['emotion'].value_counts().sort_index()
+
+    # Plot with dark theme
+    plt.style.use("dark_background")
+    fig, ax = plt.subplots(figsize=(10, 4))
+    mood_counts.plot(kind='line', marker='o', color='cyan', ax=ax)
+    ax.set_title("Total Entries per Mood")
+    ax.set_xlabel("Mood")
+    ax.set_ylabel("Number of Entries")
+    st.pyplot(fig)
+else:
+    st.info("No entries yet. Once you add, they will appear here with a line chart.")
